@@ -179,6 +179,7 @@ def main():
             if all_results:
                 for result in all_results:
                     print(result)
+                logging.info(f"Поездок по заданным адресам: {len(all_results)}")
             else:
                 logging.info("Маршруты с заданными параметрами не найдены.")
     except Exception as e:

@@ -1,11 +1,12 @@
 import imaplib
 import email
-from bs4 import BeautifulSoup
+import ast
+import os
 import logging
 import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import os
+from bs4 import BeautifulSoup
 from contextlib import contextmanager
 
 # Настройка логирования
@@ -22,8 +23,8 @@ EMAIL = os.getenv("EMAIL")
 PASSWORD = os.getenv("PASSWORD")
 MAILBOX_PATH = os.getenv("MAILBOX_PATH", "INBOX")
 
-# Список маршрутов для поиска
-ROUTES_TO_FIND = os.getenv("ROUTES_TO_FIND")
+# Считывание ROUTES_TO_FIND из .env файла и преобразование строки в список
+ROUTES_TO_FIND = ast.literal_eval(os.getenv("ROUTES_TO_FIND", "[]"))
 
 
 @contextmanager

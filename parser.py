@@ -69,7 +69,7 @@ def fetch_emails(mail, sender, month):
             logging.warning("Не удалось выполнить поиск писем.")
             return []
         email_ids = messages[0].split()
-        logging.info(f"Найдено писем: {len(email_ids)}")
+        logging.info(f"Найдено писем с поездками за месяц: {len(email_ids)}")
         return email_ids
     except Exception as e:
         logging.error(f"Ошибка при поиске писем: {e}")

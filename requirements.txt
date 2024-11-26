@@ -1,3 +1,2 @@
-beautifulsoup4==4.12.2
-imaplib==1.0
-python-dotenv==1.0.0
+beautifulsoup4==4.12.3
+python-dotenv==1.0.1

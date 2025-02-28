@@ -4,12 +4,12 @@ from bs4 import BeautifulSoup
 class EmailParser:
     """Класс для парсинга содержимого писем."""
     
-    def __init__(self, routes_to_find):
+    def __init__(self, addresses_to_find):
         """Инициализация парсера."""
-        self.routes_to_find = routes_to_find
+        self.addresses_to_find = addresses_to_find
     
     def parse_email_content(self, content):
-        """Парсинг содержимого письма с учётом маршрутов."""
+        """Парсинг содержимого письма с учётом адресов."""
         try:
             # Проверяем наличие сообщения о смене направления перед очисткой
             has_direction_change = "Точка назначения изменена" in content
@@ -28,6 +28,10 @@ class EmailParser:
             # Получаем начальную и конечную точки маршрута
             start_point = route_points[0].find('p', class_='route__point-name').get_text(strip=True)
             end_point = route_points[-1].find('p', class_='route__point-name').get_text(strip=True)
+            
+            # Логируем найденные точки маршрута
+            logging.debug(f"Найдены точки маршрута: начало='{start_point}', конец='{end_point}'")
+            logging.debug(f"Искомые адреса: {self.addresses_to_find}")
 
             # Извлечение времени
             start_time = route_points[0].find('p', class_='hint').get_text(strip=True) if route_points[0].find('p', class_='hint') else "N/A"
@@ -41,17 +45,31 @@ class EmailParser:
             date_row = soup.find('td', string="Дата")
             date_text = date_row.find_next_sibling('td').get_text(strip=True) if date_row else "N/A"
 
-            # Проверка маршрута на соответствие ROUTES_TO_FIND
-            for point_a, point_b in self.routes_to_find:
-                if (point_a in start_point and point_b in end_point) or (point_a in end_point and point_b in start_point):
-                    # Определяем направление с учетом ранее обнаруженного сообщения
-                    if has_direction_change:
-                        direction = f"{end_point} -> {start_point}"
-                    else:
-                        direction = f"{start_point} -> {end_point}"
+            # Проверка, содержит ли маршрут хотя бы один из искомых адресов
+            start_matches = [address for address in self.addresses_to_find if address in start_point]
+            end_matches = [address for address in self.addresses_to_find if address in end_point]
+            
+            # Логируем результаты проверки
+            if start_matches:
+                logging.debug(f"Найдено совпадение в начальной точке: {start_matches}")
+            if end_matches:
+                logging.debug(f"Найдено совпадение в конечной точке: {end_matches}")
+            
+            start_match = len(start_matches) > 0
+            end_match = len(end_matches) > 0
+            
+            if start_match or end_match:
+                # Определяем направление с учетом ранее обнаруженного сообщения
+                if has_direction_change:
+                    direction = f"{end_point} -> {start_point}"
+                else:
+                    direction = f"{start_point} -> {end_point}"
 
-                    result = f"Маршрут: {direction}, Стоимость: {cost_text}, Дата: {date_text}, Время: {start_time} - {end_time}"
-                    return [result]
+                result = f"Маршрут: {direction}, Стоимость: {cost_text}, Дата: {date_text}, Время: {start_time} - {end_time}"
+                logging.debug(f"Найден подходящий маршрут: {result}")
+                return [result]
+            else:
+                logging.debug("Маршрут не соответствует искомым адресам")
 
             return []
         except Exception as e:

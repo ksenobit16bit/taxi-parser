@@ -10,36 +10,52 @@ class EmailClient:
     
     def __init__(self, config):
         """Инициализация клиента."""
-        self.imap_server = config["IMAP_SERVER"]
-        self.email = config["EMAIL"]
-        self.password = config["PASSWORD"]
-        self.mailbox_path = config["MAILBOX_PATH"]
+        self.config = config
     
-    @contextmanager
     def connect(self):
-        """Контекстный менеджер для подключения к серверу IMAP."""
-        mail = None
+        """Подключение к почтовому серверу."""
         try:
             logging.info("Подключение к серверу IMAP...")
-            mail = imaplib.IMAP4_SSL(self.imap_server)
-            mail.login(self.email, self.password)
-            mailbox_path_encoded = self.mailbox_path.encode('utf-7').decode('ascii')
-            status, _ = mail.select(f'"{mailbox_path_encoded}"')
+            mail = imaplib.IMAP4_SSL(self.config["IMAP_SERVER"])
+            mail.login(self.config["EMAIL"], self.config["PASSWORD"])
+            
+            # Получаем список папок
+            status, mailboxes = mail.list()
             if status != 'OK':
-                raise Exception(f"Не удалось открыть папку: {self.mailbox_path}")
-            logging.info(f"Успешно подключено к папке: {self.mailbox_path}")
-            yield mail
+                logging.error("Не удалось получить список папок.")
+                return None
+            
+            # Ищем папку, содержащую "taxi" или "такси"
+            target_mailbox = None
+            for mailbox in mailboxes:
+                mailbox_name = mailbox.decode('utf-8', errors='ignore')
+                if "taxi" in mailbox_name.lower() or "такси" in mailbox_name.lower():
+                    # Извлекаем имя папки
+                    parts = mailbox_name.split(' "')
+                    if len(parts) > 1:
+                        target_mailbox = parts[-1].strip('"')
+                        break
+            
+            # Если не нашли специальную папку, используем INBOX
+            if not target_mailbox:
+                target_mailbox = self.config["MAILBOX_PATH"]
+            
+            # Выбираем папку
+            status, data = mail.select(target_mailbox)
+            if status != 'OK':
+                logging.warning(f"Не удалось выбрать папку {target_mailbox}, пробуем INBOX")
+                status, data = mail.select("INBOX")
+                if status != 'OK':
+                    logging.error("Не удалось выбрать папку INBOX")
+                    return None
+                logging.info("Успешно подключено к папке: INBOX")
+            else:
+                logging.info(f"Успешно подключено к папке: {target_mailbox}")
+            
+            return mail
         except Exception as e:
-            logging.error(f"Ошибка подключения к почтовому серверу: {e}")
-            raise
-        finally:
-            if mail:
-                try:
-                    mail.close()
-                    mail.logout()
-                    logging.info("Отключение от IMAP.")
-                except:
-                    pass
+            logging.error(f"Ошибка при подключении к почте: {e}")
+            return None
     
     def calculate_date_range(self, month):
         """Вычисление диапазона дат для поиска."""
@@ -48,18 +64,26 @@ class EmailClient:
         logging.debug(f"Диапазон дат: {start_date.strftime('%d-%b-%Y')} - {end_date.strftime('%d-%b-%Y')}")
         return start_date.strftime("%d-%b-%Y"), end_date.strftime("%d-%b-%Y")
     
-    def fetch_emails(self, mail, sender, month):
+    def fetch_emails(self, mail, month):
         """Поиск и загрузка писем."""
         try:
             start_date, end_date = self.calculate_date_range(month)
-            query = f'FROM "{sender}" SINCE {start_date} BEFORE {end_date}'
+            
+            # Используем запрос только по дате
+            query = f'SINCE {start_date} BEFORE {end_date}'
             logging.debug(f"IMAP-запрос: {query}")
+            
             status, messages = mail.search(None, query)
             if status != 'OK':
                 logging.warning("Не удалось выполнить поиск писем.")
                 return []
+            
             email_ids = messages[0].split()
-            logging.info(f"Найдено писем с поездками за месяц: {len(email_ids)}")
+            if not email_ids:
+                logging.info("Писем за указанный период не найдено.")
+                return []
+            
+            logging.info(f"Найдено писем за месяц: {len(email_ids)}")
             return email_ids
         except Exception as e:
             logging.error(f"Ошибка при поиске писем: {e}")
@@ -73,11 +97,9 @@ class EmailClient:
                 for part in msg.walk():
                     if part.get_content_type() == 'text/html':
                         html_content = part.get_payload(decode=True).decode()
-                        logging.debug(f"Извлечён HTML-содержимое письма (первые 500 символов): {html_content[:500]}...")
                         return html_content
             elif msg.get_content_type() == 'text/html':
                 html_content = msg.get_payload(decode=True).decode()
-                logging.debug(f"Извлечён HTML-содержимое письма (первые 500 символов): {html_content[:500]}...")
                 return html_content
         except Exception as e:
             logging.error(f"Ошибка при извлечении HTML: {e}")

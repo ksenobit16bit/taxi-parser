@@ -53,8 +53,8 @@ class TripAnalytics:
             # Получаем год и месяц из строки формата YYYY-MM
             year, month_num = map(int, month.split('-'))
             
-            # Преобразуем строки дат в объекты datetime и создаем словарь поездок
-            trips_by_date = {}
+            # Создаем словарь для хранения всех поездок по дням и времени
+            all_trips = {}
             
             for trip in trips:
                 # Извлекаем дату, стоимость и время из строки результата
@@ -72,26 +72,71 @@ class TripAnalytics:
                         
                     cost = int(match_cost.group(1))
                     hour = int(match_time.group(1))
+                    minute = int(match_time.group(2))
                     
-                    try:
-                        date = datetime(year, month_num, day)
-                        if date.weekday() <= 4:  # Только будние дни
-                            if day not in trips_by_date:
-                                trips_by_date[day] = {'morning': 0, 'evening': 0}
-                            
-                            if hour < 12:
+                    # Создаем ключ для словаря в формате (день, час, минута)
+                    trip_key = (day, hour, minute)
+                    all_trips[trip_key] = cost
+            
+            # Сортируем поездки по дате и времени
+            sorted_trips = sorted(all_trips.items())
+            
+            # Создаем словарь для хранения утренних и вечерних поездок по рабочим дням
+            trips_by_date = {}
+            
+            # Проходим по всем поездкам в хронологическом порядке
+            for (day, hour, minute), cost in sorted_trips:
+                try:
+                    date = datetime(year, month_num, day)
+                    
+                    # Если это ранняя утренняя поездка (00:00-04:00)
+                    if 0 <= hour < 4:
+                        # Проверяем предыдущий день
+                        prev_day = day - 1
+                        try:
+                            prev_date = datetime(year, month_num, prev_day)
+                            # Если предыдущий день - рабочий день
+                            if prev_date.weekday() <= 4:
+                                # Если предыдущего дня нет в словаре, добавляем его
+                                if prev_day not in trips_by_date:
+                                    trips_by_date[prev_day] = {'morning': 0, 'evening': 0}
+                                
+                                # Если у предыдущего дня нет вечерней поездки, добавляем эту
+                                if trips_by_date[prev_day]['evening'] == 0:
+                                    trips_by_date[prev_day]['evening'] = cost
+                                    logging.debug(f"Добавлена вечерняя поездка для дня {prev_day}: {cost} (ранняя утренняя поездка дня {day})")
+                                    continue
+                        except ValueError:
+                            pass
+                    
+                    # Если это рабочий день
+                    if date.weekday() <= 4:
+                        # Если дня нет в словаре, добавляем его
+                        if day not in trips_by_date:
+                            trips_by_date[day] = {'morning': 0, 'evening': 0}
+                        
+                        # Если поездка до 12:00, считаем ее утренней
+                        if hour < 12:
+                            # Если утренней поездки еще нет, добавляем
+                            if trips_by_date[day]['morning'] == 0:
                                 trips_by_date[day]['morning'] = cost
-                            else:
+                        # Иначе считаем вечерней
+                        else:
+                            # Если вечерней поездки еще нет, добавляем
+                            if trips_by_date[day]['evening'] == 0:
                                 trips_by_date[day]['evening'] = cost
-                    except ValueError:
-                        logging.warning(f"Пропущена невалидная дата: {year}-{month_num}-{day}")
-                        continue
-
+                except ValueError:
+                    logging.warning(f"Пропущена невалидная дата: {year}-{month_num}-{day}")
+            
+            # Вывод содержимого словаря для отладки
+            for day in sorted(trips_by_date.keys()):
+                logging.debug(f"День {day}: утро={trips_by_date[day]['morning']}, вечер={trips_by_date[day]['evening']}")
+            
             # Получаем рабочие недели
             weeks = TripAnalytics.get_workweeks_in_month(month)
             if not weeks:
                 return "Не удалось определить рабочие недели", ""
-
+            
             # Форматируем вывод
             weeks_str = "\t".join(f"{w[0]}-{w[1]}" for w in weeks)
             
@@ -110,7 +155,7 @@ class TripAnalytics:
             
             formulas_str = "\t".join(formulas)
             return weeks_str, formulas_str
-
+        
         except Exception as e:
             logging.error(f"Ошибка при форматировании результатов: {e}")
             return "Ошибка при форматировании результатов", "" 

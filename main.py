@@ -45,7 +45,9 @@ def main():
             
             # Инициализация парсера писем
             addresses_to_find = config["ADDRESSES_TO_FIND"]
-            email_parser = EmailParser(addresses_to_find)
+            required_address = config["REQUIRED_ADDRESS"]
+            excluded_addresses = config["EXCLUDED_ADDRESSES"]
+            email_parser = EmailParser(addresses_to_find, required_address, excluded_addresses)
             
             # Получение и обработка писем
             trips = []

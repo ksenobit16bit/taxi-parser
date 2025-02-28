@@ -4,9 +4,11 @@ from bs4 import BeautifulSoup
 class EmailParser:
     """Класс для парсинга содержимого писем."""
     
-    def __init__(self, addresses_to_find):
+    def __init__(self, addresses_to_find, required_address="", excluded_addresses=None):
         """Инициализация парсера."""
         self.addresses_to_find = addresses_to_find
+        self.required_address = required_address
+        self.excluded_addresses = excluded_addresses or []
     
     def parse_email_content(self, content):
         """Парсинг содержимого письма с учётом адресов."""
@@ -32,6 +34,21 @@ class EmailParser:
             # Логируем найденные точки маршрута
             logging.debug(f"Найдены точки маршрута: начало='{start_point}', конец='{end_point}'")
             logging.debug(f"Искомые адреса: {self.addresses_to_find}")
+            
+            # Проверка на исключаемые адреса
+            for excluded_address in self.excluded_addresses:
+                if excluded_address in start_point or excluded_address in end_point:
+                    logging.debug(f"Маршрут содержит исключаемый адрес '{excluded_address}', пропускаем")
+                    return []
+            
+            # Проверка на обязательный адрес
+            required_address_found = True
+            if self.required_address:
+                required_address_found = (self.required_address in start_point or self.required_address in end_point)
+                if not required_address_found:
+                    logging.debug(f"Обязательный адрес '{self.required_address}' не найден в маршруте")
+                else:
+                    logging.debug(f"Обязательный адрес '{self.required_address}' найден в маршруте")
 
             # Извлечение времени
             start_time = route_points[0].find('p', class_='hint').get_text(strip=True) if route_points[0].find('p', class_='hint') else "N/A"
@@ -46,19 +63,21 @@ class EmailParser:
             date_text = date_row.find_next_sibling('td').get_text(strip=True) if date_row else "N/A"
 
             # Проверка, содержит ли маршрут хотя бы один из искомых адресов
-            start_matches = [address for address in self.addresses_to_find if address in start_point]
-            end_matches = [address for address in self.addresses_to_find if address in end_point]
+            addresses_found = True  # По умолчанию считаем, что адреса найдены
+            if self.addresses_to_find:
+                start_matches = [address for address in self.addresses_to_find if address in start_point]
+                end_matches = [address for address in self.addresses_to_find if address in end_point]
+                
+                # Логируем результаты проверки
+                if start_matches:
+                    logging.debug(f"Найдено совпадение в начальной точке: {start_matches}")
+                if end_matches:
+                    logging.debug(f"Найдено совпадение в конечной точке: {end_matches}")
+                
+                addresses_found = len(start_matches) > 0 or len(end_matches) > 0
             
-            # Логируем результаты проверки
-            if start_matches:
-                logging.debug(f"Найдено совпадение в начальной точке: {start_matches}")
-            if end_matches:
-                logging.debug(f"Найдено совпадение в конечной точке: {end_matches}")
-            
-            start_match = len(start_matches) > 0
-            end_match = len(end_matches) > 0
-            
-            if start_match or end_match:
+            # Поездка учитывается только если найдены и адреса из списка, и обязательный адрес
+            if addresses_found and required_address_found:
                 # Определяем направление с учетом ранее обнаруженного сообщения
                 if has_direction_change:
                     direction = f"{end_point} -> {start_point}"
@@ -69,7 +88,10 @@ class EmailParser:
                 logging.debug(f"Найден подходящий маршрут: {result}")
                 return [result]
             else:
-                logging.debug("Маршрут не соответствует искомым адресам")
+                if not addresses_found:
+                    logging.debug("Маршрут не соответствует искомым адресам")
+                if not required_address_found:
+                    logging.debug("Маршрут не содержит обязательный адрес")
 
             return []
         except Exception as e:

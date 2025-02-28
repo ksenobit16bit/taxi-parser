@@ -155,6 +155,83 @@ def parse_email_content(content):
         return []
 
 
+def get_workweeks_in_month(month):
+    """Возвращает список рабочих недель в месяце."""
+    start_date = datetime.strptime(month, "%Y-%m")
+    
+    # Находим первый день месяца
+    current_date = start_date.replace(day=1)
+    
+    weeks = []
+    current_week = []
+    
+    # Проходим по всем дням месяца
+    while current_date.month == start_date.month:
+        # Если это будний день (0 = понедельник, 4 = пятница)
+        if current_date.weekday() <= 4:
+            current_week.append(current_date.day)
+        
+        # Если это пятница или последний день месяца, завершаем неделю
+        if current_date.weekday() == 4 or current_date.month != current_date.replace(day=current_date.day + 1).month:
+            if current_week:
+                weeks.append((min(current_week), max(current_week)))
+            current_week = []
+            
+        current_date += timedelta(days=1)
+    
+    return weeks
+
+def format_weekly_costs(trips, month):
+    """Форматирует строки с неделями и формулами расчета."""
+    # Преобразуем строки дат в объекты datetime и создаем словарь поездок
+    trips_by_date = {}
+    for trip in trips:
+        # Извлекаем дату, стоимость и время из строки результата
+        match_date = re.search(r'Дата: (\d+) \w+ \d{4}', trip)
+        match_cost = re.search(r'Стоимость: (\d+)', trip)
+        match_time = re.search(r'Время: (\d{2}):(\d{2})', trip)
+        
+        if match_date and match_cost and match_time:
+            day = int(match_date.group(1))
+            cost = int(match_cost.group(1))
+            hour = int(match_time.group(1))
+            date = datetime.strptime(f"{month}-{day:02d}", "%Y-%m-%d")
+            
+            # Пропускаем поездки в выходные
+            if date.weekday() <= 4:  # 0-4 это пн-пт
+                if day not in trips_by_date:
+                    trips_by_date[day] = {'morning': 0, 'evening': 0}
+                
+                # Разделяем на утренние (до 12:00) и вечерние поездки
+                if hour < 12:
+                    trips_by_date[day]['morning'] = cost
+                else:
+                    trips_by_date[day]['evening'] = cost
+
+    # Получаем рабочие недели
+    weeks = get_workweeks_in_month(month)
+    
+    # Форматируем строку с неделями
+    weeks_str = "\t".join(f"{w[0]}-{w[1]}" for w in weeks)
+    
+    # Формируем формулы для каждой недели
+    formulas = []
+    for week_start, week_end in weeks:
+        daily_costs = []
+        for day in range(week_start, week_end + 1):
+            if day in trips_by_date:
+                morning = trips_by_date[day]['morning']
+                evening = trips_by_date[day]['evening']
+                daily_costs.append(f"{morning}+{evening}")
+            else:
+                daily_costs.append("0+0")
+        formula = "=(" + ")+(".join(daily_costs) + ")"
+        formulas.append(formula)
+    
+    # Используем табуляцию для разделения формул
+    formulas_str = "\t".join(formulas)
+    
+    return weeks_str, formulas_str
 
 def main():
     try:
@@ -177,9 +254,17 @@ def main():
                             all_results.extend(results)
 
             if all_results:
+                # Вывод информации о поездках
                 for result in all_results:
                     print(result)
                 logging.info(f"Поездок по заданным адресам: {len(all_results)}")
+                
+                # Добавляем вывод недель и формул с табуляцией
+                print("\n# Рабочие недели месяца:")
+                weeks_str, formulas_str = format_weekly_costs(all_results, month)
+                print(weeks_str)
+                print("\n# Формулы расчета стоимости по неделям:")
+                print(formulas_str)
             else:
                 logging.info("Маршруты с заданными параметрами не найдены.")
     except Exception as e:
